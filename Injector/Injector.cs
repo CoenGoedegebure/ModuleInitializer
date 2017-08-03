@@ -56,9 +56,9 @@ namespace Injector
                 // Rewrite the assembly
                 WriteAssembly(injectionTargetAssemblyPath, keyfile);
             }
-            catch (Exception e)
+            catch (Exception ex)
             {
-                throw new InjectionException(e.Message);
+                throw new InjectionException(ex.Message, ex);
             }
         }
 
@@ -69,17 +69,17 @@ namespace Injector
         /// <exception cref="InjectionException">No module class found</exception>
         private void InjectInitializer(MethodReference initializer)
         {
+            const MethodAttributes Attributes = MethodAttributes.Static | MethodAttributes.SpecialName | MethodAttributes.RTSpecialName;
+
             if (initializer == null)
             {
-                throw new InjectionException("InjectInitializer failed: initializer cannot be null");
+                throw new ArgumentNullException(nameof(initializer));
             }
 
             var initializerReturnType = InjectionTargetAssembly.MainModule.Import(initializer.ReturnType);
 
-            const MethodAttributes attributes = MethodAttributes.Static | MethodAttributes.SpecialName | MethodAttributes.RTSpecialName;
-
             // Create a new method .cctor (a static constructor) inside the Assembly  
-            var cctor = new MethodDefinition(".cctor", attributes, initializerReturnType);
+            var cctor = new MethodDefinition(".cctor", Attributes, initializerReturnType);
             var il = cctor.Body.GetILProcessor();
             il.Append(il.Create(OpCodes.Call, initializer));
             il.Append(il.Create(OpCodes.Ret));
@@ -130,7 +130,7 @@ namespace Injector
         {
             if (assemblyFile == null)
             {
-                throw new InjectionException("Unable to read the Injection TargetAssembly: InjectionTargetAssembly is null");
+                throw new ArgumentNullException(nameof(assemblyFile));
             }
 
             var readParams = new ReaderParameters(ReadingMode.Immediate);
@@ -148,19 +148,7 @@ namespace Injector
         /// Attempts to obtain a reference to the module initializer method within the assembly.
         /// </summary>
         /// <returns>If the method is found and valid, a reference to the ModuleInitializerMethod. Otherwise null</returns>
-        /// <exception cref="InjectionException">
-        /// No type found named 'ModuleInitializer', this type must exist or the ModuleInitializer parameter must be used
-        /// or
-        /// No method named '{0}' exists in the type '{1}'
-        /// or
-        /// Module initializer method must not have any parameters
-        /// or
-        /// Module initializer method may not be private or protected, use public or internal instead
-        /// or
-        /// Module initializer method must have 'void' as return type
-        /// or
-        /// Module initializer method must be static
-        /// </exception>
+        /// <exception cref="InjectionException"></exception>
         private MethodReference GetModuleInitializerMethod(string className, string methodName)
         {
             if (InjectionTargetAssembly == null)
@@ -172,36 +160,36 @@ namespace Injector
             var moduleInitializerClass = InjectionTargetAssembly.MainModule.Types.FirstOrDefault(t => t.Name == className);
             if (moduleInitializerClass == null)
             {
-                throw new InjectionException("No type found named 'ModuleInitializer', this type must exist or the ModuleInitializer parameter must be used");
+                throw new InjectionException($"No type found named '{className}' in the assembly {InjectionTargetAssembly.Name}");
             }
 
             // Retrieve the ModuleInitializer method 
             var resultMethod = moduleInitializerClass.Methods.FirstOrDefault(m => m.Name == methodName);
             if (resultMethod == null)
             {
-                throw new InjectionException($"No method named '{moduleInitializerClass.FullName}' exists in the type '{methodName}'");
+                throw new InjectionException($"No method named '{methodName}' exists in the type '{moduleInitializerClass.FullName}'");
             }
 
             // Validate the found method
             if (resultMethod.Parameters.Count > 0)
             {
-                throw new InjectionException("Module initializer method must not have any parameters");
+                throw new InjectionException($"Module initializer method '{methodName}' cannot have any parameters");
             }
 
             if (resultMethod.IsPrivate || resultMethod.IsFamily)
             {
-                throw new InjectionException("Module initializer method may not be private or protected, use public or internal instead");
+                throw new InjectionException($"Module initializer method '{methodName}' must be public or internal");
             }
 
             //Don't compare the types themselves, they might be from different CLR versions.
             if (!resultMethod.ReturnType.FullName.Equals(typeof(void).FullName))
             {
-                throw new InjectionException("Module initializer method must have 'void' as return type");
+                throw new InjectionException($"Module initializer method '{methodName}' must have 'void' as return type");
             }
 
             if (!resultMethod.IsStatic)
             {
-                throw new InjectionException("Module initializer method must be static");
+                throw new InjectionException($"Module initializer method '{methodName}' must be static");
             }
 
             return resultMethod;
@@ -216,7 +204,7 @@ namespace Injector
         {
             if (assemblyFilePath == null)
             {
-                throw new InjectionException("Unable to determine pdb filepath: assemblyFilePath is null");
+                throw new ArgumentNullException(nameof(assemblyFilePath));
             }
 
             var path = Path.ChangeExtension(assemblyFilePath, ".pdb");
